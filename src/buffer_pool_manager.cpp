@@ -1,0 +1,5 @@
+class BufferPoolManager {
+private:
+
+public:
+};
