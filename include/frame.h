@@ -11,12 +11,18 @@ private:
     uint32_t pin_count_{};
     bool is_dirty_{};
 public:
+    Frame(int frame_id): frame_id_(frame_id) {}
+    
     const Page& GetPage() const {
         return page_;
     }
 
     Page& GetPage() {
         return page_;
+    }
+
+    void SetPage(const Page& page) {
+        
     }
 
     int GetFrameId() const {
@@ -51,4 +57,7 @@ public:
         is_dirty_ = false;
     }
 
+    bool IsEmpty() const {
+        return page_.GetPageId() == -1;
+    }   
 };
