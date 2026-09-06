@@ -1,6 +1,7 @@
 # pragma once
 
 #include "clock_replacer.h"
+#include "disk_manager.h"
 #include "frame.h"
 #include "page_table.h"
 
@@ -11,6 +12,7 @@ private:
     std::vector<Frame> frame_array_;
     PageTable page_table_;
     ClockReplacer clock_replacer_;
+    DiskManager disk_manager_;
 
 public:
     BufferPoolManager(size_t num_frames): clock_replacer_(num_frames) {
@@ -21,7 +23,5 @@ public:
         }
     }
 
-    void AddPage(int page_id);
-
-    void EvictPage();
+    std::optional<int> AddPage(int page_id);
 };

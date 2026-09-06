@@ -11,6 +11,7 @@ set(SOURCES
     main.cpp
     src/buffer_pool_manager.cpp
     src/clock_replacer.cpp
+    src/disk_manager.cpp
     src/page_table.cpp
 )
 

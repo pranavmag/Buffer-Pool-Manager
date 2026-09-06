@@ -1,9 +1,5 @@
 #include "clock_replacer.h"
 
-#include <cstddef>
-#include <optional>
-#include <vector>
-
 std::optional<int> ClockReplacer::FindVictim(std::vector<Frame>& frames) {
     size_t starting_position = clock_hand_;
 
