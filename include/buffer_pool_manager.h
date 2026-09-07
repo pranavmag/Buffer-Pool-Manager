@@ -15,7 +15,8 @@ private:
     DiskManager disk_manager_;
 
 public:
-    BufferPoolManager(size_t num_frames): clock_replacer_(num_frames) {
+  BufferPoolManager(size_t num_frames, size_t num_disk_pages)
+      : clock_replacer_(num_frames), disk_manager_(num_disk_pages) {
         frame_array_.reserve(num_frames);
 
         for (size_t i{}; i < num_frames; ++i) {
@@ -24,4 +25,12 @@ public:
     }
 
     std::optional<int> AddPage(int page_id);
+
+    void UnpinPage(int page_id, bool is_dirty);
+
+    Page* FetchPage(int page_id);
+
+    void FlushPage(int page_id);
+
+    void FlushAllPages();
 };
