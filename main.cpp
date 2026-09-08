@@ -85,5 +85,54 @@ int main() {
 
     std::cout << "TEST 6 PASSED\n";
 
+
+    // --------------------------------------------------
+    // TEST 7: All Frames Pinned
+    // --------------------------------------------------
+
+    page0 = bpm.FetchPage(0);
+    page1 = bpm.FetchPage(1);
+    page2 = bpm.FetchPage(2);
+
+    assert(page2 == nullptr);
+
+    std::cout << "TEST 7 PASSED\n";
+
+
+    // --------------------------------------------------
+    // TEST 8: Multiple Pins
+    // Page 1 should have 1 pin still and
+    // Page 0 should have 1 pin after these operations
+    // It should not be evicting Page 0 because of one unpin
+    // Page 2 should still be nullptr
+    // --------------------------------------------------
+
+    
+    page0 = bpm.FetchPage(0);
+    bpm.UnpinPage(0, false);
+
+    assert(page2 == nullptr);
+
+    std::cout << "TEST 8 PASSED\n";
+
+
+    // --------------------------------------------------
+    // TEST 9: Flushing Dirty Page
+    // --------------------------------------------------
+
+    bpm.UnpinPage(0, true);
+
+    page2 = bpm.FetchPage(2);
+    assert(page2 != nullptr);
+
+    bpm.UnpinPage(2, false);
+
+    Page* page0_reloaded = bpm.FetchPage(0);
+    assert(page0_reloaded != nullptr);
+    assert(page0_reloaded->GetData()[0] == std::byte{'A'});
+
+    std::cout << "TEST 9 PASSED\n";
+    
+
     std::cout << "\nAll tests passed!\n";
 }

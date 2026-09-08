@@ -17,4 +17,6 @@ public:
     ClockReplacer(size_t num_frames): reference_bit_(num_frames, 0) {}
 
     std::optional<int> FindVictim(std::vector<Frame>& frames);
+
+    void SetReferenceBit(int page_id);
 };

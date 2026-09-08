@@ -69,6 +69,8 @@ Page* BufferPoolManager::FetchPage(int page_id) {
 
         frame.IncrementPinCount();
 
+        clock_replacer_.SetReferenceBit(*frame_id);
+
         return &frame.GetPage();
     }
     else {
@@ -80,6 +82,8 @@ Page* BufferPoolManager::FetchPage(int page_id) {
             Frame& frame = frame_array_[*frame_id];
 
             frame.IncrementPinCount();
+
+            clock_replacer_.SetReferenceBit(*frame_id);
 
             return &frame.GetPage();
         }
