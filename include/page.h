@@ -3,7 +3,7 @@
 #include <array>
 #include <cstddef>
 
-constexpr int PAGE_SIZE = 4096;
+constexpr std::size_t PAGE_SIZE = 4096;
 
 class Page {
 private:
@@ -21,9 +21,7 @@ public:
         return data_;
     }
 
-    int GetPageId() const {
+    [[nodiscard]] int GetPageId() const {
         return page_id_;
     }
-
-
 };

@@ -1,6 +1,6 @@
 #include "clock_replacer.h"
 
-std::optional<int> ClockReplacer::FindVictim(std::vector<Frame>& frames) {
+std::optional<std::size_t> ClockReplacer::FindVictim(std::vector<Frame>& frames) {
     size_t starting_position = clock_hand_;
 
     do {
@@ -12,7 +12,7 @@ std::optional<int> ClockReplacer::FindVictim(std::vector<Frame>& frames) {
         if (reference_bit_[clock_hand_] == 1) {
             reference_bit_[clock_hand_] = 0;
         }
-        else if (reference_bit_[clock_hand_] == 0) {
+        else {
             return clock_hand_;
         }
 

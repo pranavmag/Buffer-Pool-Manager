@@ -10,13 +10,13 @@
 
 class ClockReplacer {
 private:
-    std::vector<uint8_t> reference_bit_{};
-    size_t clock_hand_{};
+    std::vector<std::uint8_t> reference_bit_{};
+    std::size_t clock_hand_{};
 
 public:
-    ClockReplacer(size_t num_frames): reference_bit_(num_frames, 0) {}
+    explicit ClockReplacer(std::size_t num_frames): reference_bit_(num_frames, 0) {}
 
-    std::optional<int> FindVictim(std::vector<Frame>& frames);
+    [[nodiscard]] std::optional<std::size_t> FindVictim(std::vector<Frame>& frames);
 
-    void SetReferenceBit(int page_id);
+    void SetReferenceBit(int frame_id);
 };

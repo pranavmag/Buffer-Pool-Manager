@@ -10,7 +10,7 @@ private:
 public:
     void AddMapping(int page_id, int frame_id);
 
-    std::optional<int> GetMapping(int page_id) const;
+    [[nodiscard]] std::optional<int> GetMapping(int page_id) const;
     
     void RemoveMapping(int page_id);
 };

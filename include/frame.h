@@ -9,7 +9,7 @@ class Frame {
 private:
     int frame_id_{};
     Page page_;
-    uint32_t pin_count_{};
+    std::uint32_t pin_count_{};
     bool is_dirty_{};
 public:
     Frame(int frame_id): frame_id_(frame_id) {}
@@ -26,14 +26,11 @@ public:
         page_ = std::move(page);
     }
 
-    void RemovePage(int page_id) {
-    }
-
-    int GetFrameId() const {
+    [[nodiscard]] int GetFrameId() const {
         return frame_id_;
     }
 
-    uint32_t GetPinCount() const {
+    [[nodiscard]] std::uint32_t GetPinCount() const {
         return pin_count_;
     }
 
@@ -41,15 +38,16 @@ public:
         ++pin_count_;
     }
 
-    void DecrementPinCount() {
+    bool DecrementPinCount() {
         if (pin_count_ == 0) {
-            return;
+            return false;
         }
 
         --pin_count_;
+        return true;
     }
 
-    bool IsDirty() const {
+    [[nodiscard]] bool IsDirty() const {
         return is_dirty_;
     }
 
@@ -61,7 +59,7 @@ public:
         is_dirty_ = false;
     }
 
-    bool IsEmpty() const {
+    [[nodiscard]] bool IsEmpty() const {
         return page_.GetPageId() == -1;
     }   
 };

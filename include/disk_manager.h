@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
 
@@ -13,9 +12,9 @@ private:
     std::vector<uint8_t> bytes_;
 
 public:
-    DiskManager(size_t num_pages): bytes_(num_pages * PAGE_SIZE) {}
+    explicit DiskManager(size_t num_pages): bytes_(num_pages * PAGE_SIZE) {}
     
-    size_t ReadPage(int page_id, Page& page) const;
+    std::size_t ReadPage(int page_id, Page& page) const;
 
-    size_t WritePage(int page_id, Page& page);
+    std::size_t WritePage(int page_id, const Page& page);
 };
