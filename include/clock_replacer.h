@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -16,7 +17,7 @@ private:
 public:
     explicit ClockReplacer(std::size_t num_frames): reference_bit_(num_frames, 0) {}
 
-    [[nodiscard]] std::optional<std::size_t> FindVictim(std::vector<Frame>& frames);
+    [[nodiscard]] std::optional<std::size_t> FindVictim(std::vector<std::unique_ptr<Frame>>& frames);
 
     void SetReferenceBit(int frame_id);
 };

@@ -5,14 +5,18 @@
 #include "frame.h"
 #include "page_table.h"
 
+#include <memory>
+#include <mutex>
 #include <vector>
 
 class BufferPoolManager {
 private:
-    std::vector<Frame> frame_array_;
+    std::vector<std::unique_ptr<Frame>> frame_array_;
     PageTable page_table_;
     ClockReplacer clock_replacer_;
     DiskManager disk_manager_;
+
+    mutable std::mutex bpm_mutex_;
 
     bool AddPage(int page_id);
 
@@ -22,13 +26,13 @@ public:
         frame_array_.reserve(num_frames);
 
         for (std::size_t i{}; i < num_frames; ++i) {
-            frame_array_.emplace_back(i);
+            frame_array_.emplace_back(std::make_unique<Frame>(i));
         }
     }
 
-    bool UnpinPage(int page_id, bool is_dirty);
-
     Page* FetchPage(int page_id);
+
+    bool UnpinPage(int page_id, bool is_dirty);
 
     bool FlushPage(int page_id);
 

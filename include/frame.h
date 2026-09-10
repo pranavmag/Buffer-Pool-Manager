@@ -3,7 +3,6 @@
 #include "page.h"
 
 #include <cstdint>
-#include <utility>
 
 class Frame {
 private:
@@ -22,8 +21,8 @@ public:
         return page_;
     }
 
-    void SetPage(Page page) {
-        page_ = std::move(page);
+    void AssignPage(int page_id) {
+        page_.Reset(page_id);
     }
 
     [[nodiscard]] int GetFrameId() const {

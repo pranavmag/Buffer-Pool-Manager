@@ -1,10 +1,10 @@
 #include "clock_replacer.h"
 
-std::optional<std::size_t> ClockReplacer::FindVictim(std::vector<Frame>& frames) {
+std::optional<std::size_t> ClockReplacer::FindVictim(std::vector<std::unique_ptr<Frame>>& frames) {
     size_t starting_position = clock_hand_;
 
     do {
-        if (frames[clock_hand_].GetPinCount() > 0) {
+        if (frames[clock_hand_]->GetPinCount() > 0) {
             clock_hand_ = (clock_hand_ + 1) % frames.size();
             continue;
         }
@@ -22,7 +22,7 @@ std::optional<std::size_t> ClockReplacer::FindVictim(std::vector<Frame>& frames)
     starting_position = clock_hand_;
 
     do {
-        if (frames[clock_hand_].GetPinCount() == 0 && reference_bit_[clock_hand_] == 0) {
+        if (frames[clock_hand_]->GetPinCount() == 0 && reference_bit_[clock_hand_] == 0) {
             return clock_hand_;
         }
 
