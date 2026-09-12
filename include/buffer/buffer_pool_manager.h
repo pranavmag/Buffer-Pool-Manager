@@ -1,9 +1,9 @@
 # pragma once
 
-#include "clock_replacer.h"
-#include "disk_manager.h"
-#include "frame.h"
-#include "page_table.h"
+#include "buffer/clock_replacer.h"
+#include "storage/disk_manager.h"
+#include "buffer/frame.h"
+#include "buffer/page_table.h"
 
 #include <memory>
 #include <mutex>

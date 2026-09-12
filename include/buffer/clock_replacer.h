@@ -1,6 +1,6 @@
 # pragma once
 
-#include "frame.h"
+#include "buffer/frame.h"
 
 #include <cstddef>
 #include <cstdint>

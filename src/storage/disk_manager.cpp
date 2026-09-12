@@ -1,5 +1,5 @@
-#include "disk_manager.h"
-#include "page.h"
+#include "storage/disk_manager.h"
+#include "storage/page.h"
 
 #include <cstring>
 #include <stdexcept>

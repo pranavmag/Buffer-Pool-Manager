@@ -9,10 +9,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(SOURCES
     main.cpp
-    src/buffer_pool_manager.cpp
-    src/clock_replacer.cpp
-    src/disk_manager.cpp
-    src/page_table.cpp
+    src/buffer/buffer_pool_manager.cpp
+    src/buffer/clock_replacer.cpp
+    src/storage/disk_manager.cpp
+    src/buffer/page_table.cpp
     tests/buffer_pool_tests.cpp 
     tests/buffer_pool_concurrency_tests.cpp
 )
