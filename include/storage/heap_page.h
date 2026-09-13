@@ -40,7 +40,9 @@ public:
 
     void Initialize();
 
-    void Compact(std::uint16_t shift);
+    void Compact(std::uint16_t slot_id, std::uint16_t shift);
+
+    bool RelocateRecord(std::uint16_t slot_id, SlotEntry& slot, const Record& rec);
 
     std::optional<std::uint16_t> InsertRecord(const Record& rec);
     bool DeleteRecord(std::uint16_t slot_id);
