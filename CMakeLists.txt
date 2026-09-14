@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 
 project(BufferPool)
 
@@ -7,30 +7,90 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(SOURCES
-    main.cpp
+# ---------------------------
+# Core database code
+# ---------------------------
+
+set(DB_SOURCES
     src/buffer/buffer_pool_manager.cpp
     src/buffer/clock_replacer.cpp
     src/storage/disk_manager.cpp
     src/buffer/page_table.cpp
-    tests/buffer_pool_tests.cpp 
+    src/storage/heap_page.cpp
+)
+
+add_library(db_core ${DB_SOURCES})
+
+target_include_directories(db_core
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+# ---------------------------
+# Main executable
+# ---------------------------
+
+add_executable(buffer_pool
+    main.cpp
+)
+
+target_link_libraries(buffer_pool
+    PRIVATE
+    db_core
+)
+
+# ---------------------------
+# GoogleTest
+# ---------------------------
+
+include(FetchContent)
+
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(db_tests
+    tests/heap_page_tests.cpp
+    tests/buffer_pool_tests.cpp
     tests/buffer_pool_concurrency_tests.cpp
 )
 
-add_executable(buffer_pool ${SOURCES})
+target_link_libraries(db_tests
+    PRIVATE
+    db_core
+    GTest::gtest_main
+)
 
-target_include_directories(buffer_pool PRIVATE ${CMAKE_SOURCE_DIR}/include)
+include(GoogleTest)
+gtest_discover_tests(db_tests)
+
+# ---------------------------
+# ThreadSanitizer
+# ---------------------------
 
 option(ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
 if (ENABLE_TSAN)
-    target_compile_options(buffer_pool PRIVATE
+    target_compile_options(db_core PRIVATE
         -fsanitize=thread
         -g
     )
 
-    target_link_options(buffer_pool PRIVATE
+    target_link_options(db_core PRIVATE
+        -fsanitize=thread
+    )
+
+    target_compile_options(db_tests PRIVATE
+        -fsanitize=thread
+        -g
+    )
+
+    target_link_options(db_tests PRIVATE
         -fsanitize=thread
     )
 endif()
-

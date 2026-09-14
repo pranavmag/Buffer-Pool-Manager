@@ -1,7 +1,9 @@
 #include "storage/heap_page.h"
 #include "storage/page.h"
 
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 void HeapPage::Initialize() {
     HeapPageHeader header{
@@ -57,7 +59,14 @@ void HeapPage::WriteSlot(std::uint16_t slot_id, const SlotEntry& slot) {
     );
 }
 
-void HeapPage::Compact(std::uint16_t deleted_offset, std::uint16_t deleted_length) {
+void HeapPage::Compact() {
+    struct LiveSlot {
+        std::uint16_t slot_id;
+        SlotEntry slot;
+    };
+
+    std::vector<LiveSlot> live_slots;
+
     std::uint16_t slot_count = GetSlotCount();
 
     for (std::uint16_t i{}; i < slot_count; ++i) {
@@ -67,39 +76,59 @@ void HeapPage::Compact(std::uint16_t deleted_offset, std::uint16_t deleted_lengt
             continue;
         }
 
-        if (slot.offset < deleted_offset) {
-            std::memmove(
-                page_.GetData().data() + slot.offset + deleted_length,
-                page_.GetData().data() + slot.offset,
-                slot.length
-            );
+        live_slots.push_back({i, slot});
+    }
 
-            slot.offset += deleted_length;
-
-            WriteSlot(i, slot);
+    std::sort(
+        live_slots.begin(),
+        live_slots.end(),
+        [](const LiveSlot& a, const LiveSlot& b) {
+            return a.slot.offset > b.slot.offset;
         }
+    );
+
+    std::size_t write_cursor = PAGE_SIZE;
+
+    for (auto& entry : live_slots) {
+        write_cursor -= entry.slot.length;
+
+        std::memmove(
+            page_.GetData().data() + write_cursor,
+            page_.GetData().data() + entry.slot.offset,
+            entry.slot.length
+        );
+
+        entry.slot.offset = static_cast<std::uint16_t>(write_cursor);
+
+        WriteSlot(entry.slot_id, entry.slot);
     }
 
     HeapPageHeader header = ReadHeader();
-    header.free_end += deleted_length;
+
+    header.free_end = static_cast<std::uint16_t>(write_cursor);
+
     WriteHeader(header);
 }
 
 bool HeapPage::RelocateRecord(std::uint16_t slot_id, SlotEntry& slot, const Record& rec) {
-    HeapPageHeader header = ReadHeader();
-
     std::size_t record_size = rec.size();
 
-    std::uint16_t old_offset = slot.offset;
-    std::uint16_t old_length = slot.length;
+    std::vector<std::byte> record_copy(rec.begin(), rec.end());
 
-    Compact(old_offset, old_length);
+    SlotEntry invalid{0, 0};
+    WriteSlot(slot_id, invalid);
 
-    header = ReadHeader();
+    Compact();
+
+    HeapPageHeader header = ReadHeader();
 
     std::size_t new_offset = header.free_end - record_size;
 
-    std::memmove(page_.GetData().data() + new_offset, rec.data(), record_size);
+    std::memcpy(
+        page_.GetData().data() + new_offset,
+        record_copy.data(),
+        record_copy.size()
+    );
 
     slot.offset = static_cast<std::uint16_t>(new_offset);
     slot.length = static_cast<std::uint16_t>(record_size);
@@ -179,21 +208,31 @@ bool HeapPage::DeleteRecord(std::uint16_t slot_id) {
         return false;
     }
 
-    std::uint16_t deleted_offset = slot.offset;
-    std::uint16_t deleted_length = slot.length;
-
     slot.length = 0;
     slot.offset = 0;
 
     WriteSlot(slot_id, slot);
 
-    Compact(deleted_offset, deleted_length);
+    Compact();
 
     return true;
 }
 
-bool HeapPage::GetRecord(std::uint16_t slot_id) {
+std::optional<Record> HeapPage::GetRecord(std::uint16_t slot_id) const {
+    if (slot_id >= GetSlotCount()) {
+        return std::nullopt;
+    }
 
+    SlotEntry slot = ReadSlot(slot_id);
+
+    if (!slot.IsValid()) {
+        return std::nullopt;
+    }
+
+    return Record {
+        page_.GetData().data() + slot.offset,
+        slot.length
+    };
 }
 
 bool HeapPage::UpdateRecord(std::uint16_t slot_id, const Record& rec) {

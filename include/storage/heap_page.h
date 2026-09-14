@@ -35,18 +35,18 @@ private:
 
     void WriteSlot(std::uint16_t slot_id, const SlotEntry& slot);
 
+    void Compact();
+
+    bool RelocateRecord(std::uint16_t slot_id, SlotEntry& slot, const Record& rec);
+
 public:
     explicit HeapPage(Page& page): page_(page) {}
 
     void Initialize();
 
-    void Compact(std::uint16_t slot_id, std::uint16_t shift);
-
-    bool RelocateRecord(std::uint16_t slot_id, SlotEntry& slot, const Record& rec);
-
     std::optional<std::uint16_t> InsertRecord(const Record& rec);
     bool DeleteRecord(std::uint16_t slot_id);
-    bool GetRecord(std::uint16_t slot_id);
+    std::optional<Record> GetRecord(std::uint16_t slot_id) const;
     bool UpdateRecord(std::uint16_t slot_id, const Record& rec);
 
     std::uint16_t GetFreeSpace() const;
