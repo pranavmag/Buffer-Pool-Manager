@@ -356,10 +356,3 @@ TEST_F(HeapPageTest, GrowingUpdateFailsWhenInsufficientSpace) {
     ExpectRecordEquals(*slot_id, original);
     ExpectRecordEquals(*filler_slot, filler);
 }
-
-
-
-
-
-
-

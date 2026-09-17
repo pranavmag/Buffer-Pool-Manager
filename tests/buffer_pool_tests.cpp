@@ -1,177 +1,140 @@
+#include <gtest/gtest.h>
+
 #include "buffer/buffer_pool_manager.h"
 
-#include <cassert>
-#include <iostream>
-
-void BufferPoolTests() {
-    // 2 frames in the buffer pool
-    // 3 pages available on the simulated disk
+TEST(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
     BufferPoolManager bpm(2, 3);
 
     // --------------------------------------------------
-    // TEST 1: Fetch two pages
+    // Fetch two pages
     // --------------------------------------------------
 
     Page* page0 = bpm.FetchPage(0);
-    assert(page0 != nullptr);
+    ASSERT_NE(page0, nullptr);
 
     {
         auto guard = page0->ReadLatch();
-        assert(page0->GetPageId() == 0);
+        EXPECT_EQ(page0->GetPageId(), 0);
     }
 
     Page* page1 = bpm.FetchPage(1);
-    assert(page1 != nullptr);
+    ASSERT_NE(page1, nullptr);
 
     {
         auto guard = page1->ReadLatch();
-        assert(page1->GetPageId() == 1);
+        EXPECT_EQ(page1->GetPageId(), 1);
     }
 
-    std::cout << "TEST 1 PASSED\n";
-
-
     // --------------------------------------------------
-    // TEST 2: Unpin pages
+    // Unpin both pages
     // --------------------------------------------------
 
-    assert(bpm.UnpinPage(0, false));
-    assert(bpm.UnpinPage(1, false));
-
-    std::cout << "TEST 2 PASSED\n";
-
+    EXPECT_TRUE(bpm.UnpinPage(0, false));
+    EXPECT_TRUE(bpm.UnpinPage(1, false));
 
     // --------------------------------------------------
-    // TEST 3: Modify page 0 and mark it dirty
+    // Modify page 0 and mark it dirty
     // --------------------------------------------------
 
     page0 = bpm.FetchPage(0);
-    assert(page0 != nullptr);
+    ASSERT_NE(page0, nullptr);
 
     {
         auto guard = page0->WriteLatch();
         page0->GetData()[0] = std::byte{'A'};
     }
 
-    assert(bpm.UnpinPage(0, true));
-
-    std::cout << "TEST 3 PASSED\n";
-
+    EXPECT_TRUE(bpm.UnpinPage(0, true));
 
     // --------------------------------------------------
-    // TEST 4: Fetch page 2
-    // This should force an eviction because we only
-    // have 2 frames.
+    // Fetch page 2, forcing an eviction
     // --------------------------------------------------
 
     Page* page2 = bpm.FetchPage(2);
-    assert(page2 != nullptr);
+    ASSERT_NE(page2, nullptr);
 
     {
         auto guard = page2->ReadLatch();
-        assert(page2->GetPageId() == 2);
+        EXPECT_EQ(page2->GetPageId(), 2);
     }
 
-    assert(bpm.UnpinPage(2, false));
-
-    std::cout << "TEST 4 PASSED\n";
-
+    EXPECT_TRUE(bpm.UnpinPage(2, false));
 
     // --------------------------------------------------
-    // TEST 5: Fetch page 0 again
-    // Page 0 may have been evicted, so this tests whether
-    // the dirty data was written to the simulated disk.
+    // Reload page 0 and verify dirty data survived
     // --------------------------------------------------
 
     page0 = bpm.FetchPage(0);
-    assert(page0 != nullptr);
+    ASSERT_NE(page0, nullptr);
 
     {
         auto guard = page0->ReadLatch();
-        assert(page0->GetData()[0] == std::byte{'A'});
+        EXPECT_EQ(page0->GetData()[0], std::byte{'A'});
     }
 
-    assert(bpm.UnpinPage(0, false));
-
-    std::cout << "TEST 5 PASSED\n";
-
+    EXPECT_TRUE(bpm.UnpinPage(0, false));
 
     // --------------------------------------------------
-    // TEST 6: FlushAllPages
+    // Flush all pages
     // --------------------------------------------------
 
-    assert(bpm.FlushAllPages());
-
-    std::cout << "TEST 6 PASSED\n";
-
+    EXPECT_TRUE(bpm.FlushAllPages());
 
     // --------------------------------------------------
-    // TEST 7: All Frames Pinned
+    // All frames pinned
     // --------------------------------------------------
 
     page0 = bpm.FetchPage(0);
-    assert(page0 != nullptr);
+    ASSERT_NE(page0, nullptr);
 
     page1 = bpm.FetchPage(1);
-    assert(page1 != nullptr);
+    ASSERT_NE(page1, nullptr);
 
     page2 = bpm.FetchPage(2);
 
-    assert(page2 == nullptr);
-
-    std::cout << "TEST 7 PASSED\n";
-
+    EXPECT_EQ(page2, nullptr);
 
     // --------------------------------------------------
-    // TEST 8: Multiple Pins
+    // Multiple pins
     //
-    // Page 0 is already pinned from TEST 7.
-    // Fetching it again increments its pin count.
-    // One unpin should still leave it pinned.
-    // Page 1 is also pinned, so page 2 should still fail.
+    // page0 already has one pin. Fetch again -> pin count +1.
+    // One unpin still leaves page0 pinned.
+    // page1 is pinned too, so page2 should still fail.
     // --------------------------------------------------
 
     page0 = bpm.FetchPage(0);
-    assert(page0 != nullptr);
+    ASSERT_NE(page0, nullptr);
 
-    assert(bpm.UnpinPage(0, false));
-
-    page2 = bpm.FetchPage(2);
-    assert(page2 == nullptr);
-
-    std::cout << "TEST 8 PASSED\n";
-
-
-    // --------------------------------------------------
-    // TEST 9: Dirty eviction and reload
-    //
-    // Release the remaining pin on page 0 and mark it dirty.
-    // Then page 2 should be able to enter the buffer pool.
-    // Reload page 0 afterward and verify its data survived.
-    // --------------------------------------------------
-
-    assert(bpm.UnpinPage(0, true));
+    EXPECT_TRUE(bpm.UnpinPage(0, false));
 
     page2 = bpm.FetchPage(2);
-    assert(page2 != nullptr);
 
-    assert(bpm.UnpinPage(2, false));
+    EXPECT_EQ(page2, nullptr);
+
+    // --------------------------------------------------
+    // Dirty eviction and reload
+    // --------------------------------------------------
+
+    EXPECT_TRUE(bpm.UnpinPage(0, true));
+
+    page2 = bpm.FetchPage(2);
+    ASSERT_NE(page2, nullptr);
+
+    EXPECT_TRUE(bpm.UnpinPage(2, false));
 
     Page* page0_reloaded = bpm.FetchPage(0);
-    assert(page0_reloaded != nullptr);
+    ASSERT_NE(page0_reloaded, nullptr);
 
     {
         auto guard = page0_reloaded->ReadLatch();
-        assert(page0_reloaded->GetData()[0] == std::byte{'A'});
+        EXPECT_EQ(
+            page0_reloaded->GetData()[0],
+            std::byte{'A'}
+        );
     }
 
-    assert(bpm.UnpinPage(0, false));
+    EXPECT_TRUE(bpm.UnpinPage(0, false));
 
-    std::cout << "TEST 9 PASSED\n";
-
-
-    // Clean up the remaining pin on page 1 from TEST 7.
-    assert(bpm.UnpinPage(1, false));
-
-    std::cout << "\nAll tests passed!\n";
+    // Clean up page1's remaining pin.
+    EXPECT_TRUE(bpm.UnpinPage(1, false));
 }

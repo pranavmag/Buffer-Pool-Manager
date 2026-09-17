@@ -1,38 +1,54 @@
+#include <gtest/gtest.h>
+
 #include "buffer/buffer_pool_manager.h"
 
 #include <array>
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <random>
 #include <thread>
 #include <vector>
 
-void BPMConcurrentFetchTest() {
+// --------------------------------------------------
+// Concurrent Fetch
+// --------------------------------------------------
+
+TEST(BufferPoolConcurrencyTest, ConcurrentFetch) {
     BufferPoolManager bpm(2, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 1000;
 
+    std::atomic<bool> failed{false};
+
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
-        threads.emplace_back([&bpm]() {
+        threads.emplace_back([&]() {
             for (int j = 0; j < ITERATIONS; ++j) {
                 Page* page = bpm.FetchPage(0);
-                assert(page != nullptr);
+
+                if (page == nullptr) {
+                    failed = true;
+                    return;
+                }
 
                 {
                     auto guard = page->ReadLatch();
 
-                    assert(page->GetPageId() == 0);
+                    if (page->GetPageId() != 0) {
+                        failed = true;
+                        return;
+                    }
                 }
 
-                assert(bpm.UnpinPage(0, false));
+                if (!bpm.UnpinPage(0, false)) {
+                    failed = true;
+                    return;
+                }
             }
         });
     }
@@ -41,34 +57,50 @@ void BPMConcurrentFetchTest() {
         thread.join();
     }
 
-    std::cout << "Concurrent fetch test passed!\n";
+    EXPECT_FALSE(failed.load());
 }
 
-void BPMConcurrentWriteTest() {
+
+// --------------------------------------------------
+// Concurrent Write
+// --------------------------------------------------
+
+TEST(BufferPoolConcurrencyTest, ConcurrentWrite) {
     BufferPoolManager bpm(2, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 20;
 
+    std::atomic<bool> failed{false};
+
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
-        threads.emplace_back([&bpm]() {
+        threads.emplace_back([&]() {
             for (int j = 0; j < ITERATIONS; ++j) {
                 Page* page = bpm.FetchPage(0);
-                assert(page != nullptr);
+
+                if (page == nullptr) {
+                    failed = true;
+                    return;
+                }
 
                 {
                     auto guard = page->WriteLatch();
 
                     auto& data = page->GetData();
 
-                    unsigned int value = std::to_integer<unsigned int>(data[0]);
+                    unsigned int value =
+                        std::to_integer<unsigned int>(data[0]);
 
-                    data[0] = static_cast<std::byte>(value + 1);
+                    data[0] =
+                        static_cast<std::byte>(value + 1);
                 }
 
-                assert(bpm.UnpinPage(0, true));
+                if (!bpm.UnpinPage(0, true)) {
+                    failed = true;
+                    return;
+                }
             }
         });
     }
@@ -77,37 +109,51 @@ void BPMConcurrentWriteTest() {
         thread.join();
     }
 
+    ASSERT_FALSE(failed.load());
+
     Page* page = bpm.FetchPage(0);
-    assert(page != nullptr);
+    ASSERT_NE(page, nullptr);
 
     {
         auto guard = page->ReadLatch();
 
-        unsigned int final_value = std::to_integer<unsigned int>(page->GetData()[0]);
+        unsigned int final_value =
+            std::to_integer<unsigned int>(
+                page->GetData()[0]
+            );
 
-        assert(final_value == THREAD_COUNT * ITERATIONS);
+        EXPECT_EQ(
+            final_value,
+            THREAD_COUNT * ITERATIONS
+        );
     }
 
-    assert(bpm.UnpinPage(0, false));
-
-    std::cout << "Concurrent write test passed!\n";
+    EXPECT_TRUE(bpm.UnpinPage(0, false));
 }
 
-void BPMConcurrentEvictionTest() {
+
+// --------------------------------------------------
+// Concurrent Eviction
+// --------------------------------------------------
+
+TEST(BufferPoolConcurrencyTest, ConcurrentEviction) {
     BufferPoolManager bpm(2, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 1000;
 
+    std::atomic<bool> failed{false};
+
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
-        threads.emplace_back([&bpm]() {
+        threads.emplace_back([&]() {
             for (int j = 0; j < ITERATIONS; ++j) {
                 int page_id = j % 3;
 
                 Page* page = bpm.FetchPage(page_id);
 
+                // Legitimate under contention if all frames are pinned.
                 if (page == nullptr) {
                     continue;
                 }
@@ -115,10 +161,16 @@ void BPMConcurrentEvictionTest() {
                 {
                     auto guard = page->ReadLatch();
 
-                    assert(page->GetPageId() == page_id);
+                    if (page->GetPageId() != page_id) {
+                        failed = true;
+                        return;
+                    }
                 }
 
-                assert(bpm.UnpinPage(page_id, false));
+                if (!bpm.UnpinPage(page_id, false)) {
+                    failed = true;
+                    return;
+                }
             }
         });
     }
@@ -127,21 +179,28 @@ void BPMConcurrentEvictionTest() {
         thread.join();
     }
 
-    std::cout << "Concurrent eviction test passed!\n";
+    EXPECT_FALSE(failed.load());
 }
 
-void BPMConcurrentDirtyEvictionTest() {
+
+// --------------------------------------------------
+// Concurrent Dirty Eviction
+// --------------------------------------------------
+
+TEST(BufferPoolConcurrencyTest, ConcurrentDirtyEviction) {
     BufferPoolManager bpm(2, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 20;
 
-    std::vector<std::thread> threads;
+    std::atomic<bool> failed{false};
 
     std::array<std::atomic<int>, 3> successful_writes{};
 
+    std::vector<std::thread> threads;
+
     for (int i = 0; i < THREAD_COUNT; ++i) {
-        threads.emplace_back([&bpm, &successful_writes]() {
+        threads.emplace_back([&]() {
             for (int j = 0; j < ITERATIONS; ++j) {
                 int page_id = j % 3;
 
@@ -156,12 +215,19 @@ void BPMConcurrentDirtyEvictionTest() {
 
                     auto& data = page->GetData();
 
-                    unsigned int value = std::to_integer<unsigned int>(data[0]);
+                    unsigned int value =
+                        std::to_integer<unsigned int>(
+                            data[0]
+                        );
 
-                    data[0] = static_cast<std::byte>(value + 1);
+                    data[0] =
+                        static_cast<std::byte>(value + 1);
                 }
 
-                assert(bpm.UnpinPage(page_id, true));
+                if (!bpm.UnpinPage(page_id, true)) {
+                    failed = true;
+                    return;
+                }
 
                 successful_writes[page_id].fetch_add(1);
             }
@@ -172,130 +238,187 @@ void BPMConcurrentDirtyEvictionTest() {
         thread.join();
     }
 
+    ASSERT_FALSE(failed.load());
+
     for (int page_id = 0; page_id < 3; ++page_id) {
         Page* page = bpm.FetchPage(page_id);
-        assert(page != nullptr);
+
+        ASSERT_NE(page, nullptr);
 
         {
             auto guard = page->ReadLatch();
 
-            unsigned int value =
-            std::to_integer<unsigned int>(page->GetData()[0]);
+            unsigned int stored =
+                std::to_integer<unsigned int>(
+                    page->GetData()[0]
+                );
 
-            int expected = successful_writes[page_id].load();
+            unsigned int expected =
+                successful_writes[page_id].load();
 
-            std::cout << "Page " << page_id
-                << " stored value: " << value 
-                << " expected=" << expected << '\n';
-            
-            assert(value == expected);
+            EXPECT_EQ(stored, expected);
         }
 
-        assert(bpm.UnpinPage(page_id, false));
+        EXPECT_TRUE(
+            bpm.UnpinPage(page_id, false)
+        );
     }
-
-    std::cout << "Concurrent dirty eviction test passed!\n";
 }
 
-void BPMRandomizedStressTest() {
+
+// --------------------------------------------------
+// Randomized Stress
+// --------------------------------------------------
+
+TEST(BufferPoolConcurrencyTest, RandomizedStress) {
     constexpr int NUM_FRAMES = 3;
     constexpr int NUM_PAGES = 8;
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 2000;
 
-    BufferPoolManager bpm(NUM_FRAMES, NUM_PAGES);
+    BufferPoolManager bpm(
+        NUM_FRAMES,
+        NUM_PAGES
+    );
 
     std::array<std::atomic<int>, NUM_PAGES> expected{};
 
+    std::atomic<bool> failed{false};
+
     std::vector<std::thread> threads;
 
-    for (int thread_id = 0; thread_id < THREAD_COUNT; ++thread_id) {
-        threads.emplace_back([&bpm, &expected, thread_id]() {
-            std::mt19937 rng(
-                static_cast<unsigned int>(
-                    std::chrono::steady_clock::now()
-                        .time_since_epoch()
-                        .count()
-                ) + thread_id
-            );
+    for (int thread_id = 0;
+         thread_id < THREAD_COUNT;
+         ++thread_id) {
 
-            std::uniform_int_distribution<int> page_dist(
-                0, NUM_PAGES - 1
-            );
+        threads.emplace_back(
+            [&, thread_id]() {
+                std::mt19937 rng(
+                    static_cast<unsigned int>(
+                        std::chrono::steady_clock::now()
+                            .time_since_epoch()
+                            .count()
+                    ) + thread_id
+                );
 
-            std::uniform_int_distribution<int> operation_dist(
-                0, 1
-            );
+                std::uniform_int_distribution<int>
+                    page_dist(0, NUM_PAGES - 1);
 
-            for (int i = 0; i < ITERATIONS; ++i) {
-                int page_id = page_dist(rng);
-                bool do_write = operation_dist(rng);
+                std::uniform_int_distribution<int>
+                    operation_dist(0, 1);
 
-                Page* page = bpm.FetchPage(page_id);
+                for (int i = 0;
+                     i < ITERATIONS;
+                     ++i) {
 
-                if (page == nullptr) {
-                    continue;
-                }
+                    int page_id = page_dist(rng);
+                    bool do_write = operation_dist(rng);
 
-                if (do_write) {
-                    {
-                        auto guard = page->WriteLatch();
+                    Page* page =
+                        bpm.FetchPage(page_id);
 
-                        auto& data = page->GetData();
-
-                        std::uint32_t value{};
-                        std::memcpy(&value, data.data(), sizeof(value));
-
-                        ++value;
-
-                        std::memcpy(data.data(), &value, sizeof(value));
+                    if (page == nullptr) {
+                        continue;
                     }
 
-                    assert(bpm.UnpinPage(page_id, true));
+                    if (do_write) {
+                        {
+                            auto guard =
+                                page->WriteLatch();
 
-                    expected[page_id].fetch_add(1);
-                }
-                else {
-                    {
-                        auto guard = page->ReadLatch();
+                            auto& data =
+                                page->GetData();
 
-                        assert(page->GetPageId() == page_id);
+                            std::uint32_t value{};
+
+                            std::memcpy(
+                                &value,
+                                data.data(),
+                                sizeof(value)
+                            );
+
+                            ++value;
+
+                            std::memcpy(
+                                data.data(),
+                                &value,
+                                sizeof(value)
+                            );
+                        }
+
+                        if (!bpm.UnpinPage(
+                                page_id,
+                                true)) {
+                            failed = true;
+                            return;
+                        }
+
+                        expected[page_id]
+                            .fetch_add(1);
                     }
+                    else {
+                        {
+                            auto guard =
+                                page->ReadLatch();
 
-                    assert(bpm.UnpinPage(page_id, false));
+                            if (page->GetPageId()
+                                != page_id) {
+                                failed = true;
+                                return;
+                            }
+                        }
+
+                        if (!bpm.UnpinPage(
+                                page_id,
+                                false)) {
+                            failed = true;
+                            return;
+                        }
+                    }
                 }
             }
-        });
+        );
     }
 
     for (auto& thread : threads) {
         thread.join();
     }
 
-    bpm.FlushAllPages();
+    ASSERT_FALSE(failed.load());
 
-    for (int page_id = 0; page_id < NUM_PAGES; ++page_id) {
+    ASSERT_TRUE(bpm.FlushAllPages());
+
+    for (int page_id = 0;
+         page_id < NUM_PAGES;
+         ++page_id) {
+
         Page* page = bpm.FetchPage(page_id);
-        assert(page != nullptr);
+
+        ASSERT_NE(page, nullptr);
 
         {
             auto guard = page->ReadLatch();
 
             std::uint32_t stored{};
 
-            std::memcpy(&stored, page->GetData().data(), sizeof(stored));
+            std::memcpy(
+                &stored,
+                page->GetData().data(),
+                sizeof(stored)
+            );
 
-            std::uint32_t expected_value = expected[page_id].load();
+            std::uint32_t expected_value =
+                expected[page_id].load();
 
-            std::cout << "Page " << page_id << " stored=" << stored
-                      << " expected=" << expected_value << '\n';
-
-            assert(stored == expected_value);
+            EXPECT_EQ(
+                stored,
+                expected_value
+            );
         }
-        
-        assert(bpm.UnpinPage(page_id, false));
-    }
 
-    std::cout << "Randomized stress test passed!\n";
+        EXPECT_TRUE(
+            bpm.UnpinPage(page_id, false)
+        );
+    }
 }

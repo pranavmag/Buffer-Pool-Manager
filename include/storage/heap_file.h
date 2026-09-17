@@ -1,4 +1,4 @@
-#include "heap_page.h"
+#include "storage/heap_page.h"
 
 struct PageDirectoryEntry {
     int page_id;
