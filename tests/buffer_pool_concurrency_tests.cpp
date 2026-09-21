@@ -8,22 +8,56 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <random>
 #include <thread>
 #include <vector>
+
+namespace fs = std::filesystem;
+
+class BufferPoolConcurrencyTest : public ::testing::Test {
+protected:
+    fs::path db_path = "bpm_concurrency_test.db";
+
+    void SetUp() override {
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+    }
+
+    void TearDown() override {
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+    }
+
+    void AllocatePages(BufferPoolManager& bpm, int count) {
+        for (int i = 0; i < count; ++i) {
+            int page_id = -1;
+
+            Page* page = bpm.NewPage(page_id);
+
+            ASSERT_NE(page, nullptr);
+            ASSERT_EQ(page_id, i);
+            ASSERT_TRUE(bpm.UnpinPage(page_id, false));
+        }
+    }
+};
+
 
 // --------------------------------------------------
 // Concurrent Fetch
 // --------------------------------------------------
 
-TEST(BufferPoolConcurrencyTest, ConcurrentFetch) {
-    BufferPoolManager bpm(2, 3);
+TEST_F(BufferPoolConcurrencyTest, ConcurrentFetch) {
+    BufferPoolManager bpm(2, db_path);
+
+    AllocatePages(bpm, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 1000;
 
     std::atomic<bool> failed{false};
-
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
@@ -65,14 +99,15 @@ TEST(BufferPoolConcurrencyTest, ConcurrentFetch) {
 // Concurrent Write
 // --------------------------------------------------
 
-TEST(BufferPoolConcurrencyTest, ConcurrentWrite) {
-    BufferPoolManager bpm(2, 3);
+TEST_F(BufferPoolConcurrencyTest, ConcurrentWrite) {
+    BufferPoolManager bpm(2, db_path);
+
+    AllocatePages(bpm, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 20;
 
     std::atomic<bool> failed{false};
-
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
@@ -136,14 +171,15 @@ TEST(BufferPoolConcurrencyTest, ConcurrentWrite) {
 // Concurrent Eviction
 // --------------------------------------------------
 
-TEST(BufferPoolConcurrencyTest, ConcurrentEviction) {
-    BufferPoolManager bpm(2, 3);
+TEST_F(BufferPoolConcurrencyTest, ConcurrentEviction) {
+    BufferPoolManager bpm(2, db_path);
+
+    AllocatePages(bpm, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 1000;
 
     std::atomic<bool> failed{false};
-
     std::vector<std::thread> threads;
 
     for (int i = 0; i < THREAD_COUNT; ++i) {
@@ -153,7 +189,7 @@ TEST(BufferPoolConcurrencyTest, ConcurrentEviction) {
 
                 Page* page = bpm.FetchPage(page_id);
 
-                // Legitimate under contention if all frames are pinned.
+                // Legitimate if all frames are pinned.
                 if (page == nullptr) {
                     continue;
                 }
@@ -187,8 +223,10 @@ TEST(BufferPoolConcurrencyTest, ConcurrentEviction) {
 // Concurrent Dirty Eviction
 // --------------------------------------------------
 
-TEST(BufferPoolConcurrencyTest, ConcurrentDirtyEviction) {
-    BufferPoolManager bpm(2, 3);
+TEST_F(BufferPoolConcurrencyTest, ConcurrentDirtyEviction) {
+    BufferPoolManager bpm(2, db_path);
+
+    AllocatePages(bpm, 3);
 
     constexpr int THREAD_COUNT = 8;
     constexpr int ITERATIONS = 20;
@@ -270,7 +308,7 @@ TEST(BufferPoolConcurrencyTest, ConcurrentDirtyEviction) {
 // Randomized Stress
 // --------------------------------------------------
 
-TEST(BufferPoolConcurrencyTest, RandomizedStress) {
+TEST_F(BufferPoolConcurrencyTest, RandomizedStress) {
     constexpr int NUM_FRAMES = 3;
     constexpr int NUM_PAGES = 8;
 
@@ -279,8 +317,10 @@ TEST(BufferPoolConcurrencyTest, RandomizedStress) {
 
     BufferPoolManager bpm(
         NUM_FRAMES,
-        NUM_PAGES
+        db_path
     );
+
+    AllocatePages(bpm, NUM_PAGES);
 
     std::array<std::atomic<int>, NUM_PAGES> expected{};
 

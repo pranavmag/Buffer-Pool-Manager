@@ -3,20 +3,26 @@
 #include "page.h"
 
 #include <cstddef>
-#include <cstdint>
-#include <vector>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
 
+namespace fs = std::filesystem;
 
 class DiskManager {
 private:
-    std::vector<uint8_t> bytes_;
+    fs::path file_path_;
+    std::fstream file_;
+    std::mutex disk_mutex_;
+
+    bool IsValidPageId(int page_id) const;
 
 public:
-    explicit DiskManager(size_t num_pages): bytes_(num_pages * PAGE_SIZE) {}
+    explicit DiskManager(const fs::path& file_path);
 
     int AllocatePage();
     
-    std::size_t ReadPage(int page_id, Page& page) const;
+    std::size_t ReadPage(int page_id, Page& page);
 
     std::size_t WritePage(int page_id, const Page& page);
 };

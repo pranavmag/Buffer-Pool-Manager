@@ -2,8 +2,44 @@
 
 #include "buffer/buffer_pool_manager.h"
 
-TEST(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
-    BufferPoolManager bpm(2, 3);
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+class BufferPoolManagerTest : public ::testing::Test {
+protected:
+    fs::path db_path = "bpm_test.db";
+
+    void SetUp() override {
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+    }
+
+    void TearDown() override {
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+    }
+
+    void AllocatePages(BufferPoolManager& bpm, int count) {
+        for (int i = 0; i < count; ++i) {
+            int page_id = -1;
+
+            Page* page = bpm.NewPage(page_id);
+
+            ASSERT_NE(page, nullptr);
+            ASSERT_EQ(page_id, i);
+            ASSERT_TRUE(bpm.UnpinPage(page_id, false));
+        }
+    }
+};
+
+TEST_F(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
+    BufferPoolManager bpm(2, db_path);
+
+    // Pages no longer implicitly exist.
+    AllocatePages(bpm, 3);
 
     // --------------------------------------------------
     // Fetch two pages
@@ -96,10 +132,6 @@ TEST(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
 
     // --------------------------------------------------
     // Multiple pins
-    //
-    // page0 already has one pin. Fetch again -> pin count +1.
-    // One unpin still leaves page0 pinned.
-    // page1 is pinned too, so page2 should still fail.
     // --------------------------------------------------
 
     page0 = bpm.FetchPage(0);
@@ -127,6 +159,7 @@ TEST(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
 
     {
         auto guard = page0_reloaded->ReadLatch();
+
         EXPECT_EQ(
             page0_reloaded->GetData()[0],
             std::byte{'A'}
@@ -135,6 +168,6 @@ TEST(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
 
     EXPECT_TRUE(bpm.UnpinPage(0, false));
 
-    // Clean up page1's remaining pin.
+    // Clean up remaining pin on page 1.
     EXPECT_TRUE(bpm.UnpinPage(1, false));
 }
