@@ -13,6 +13,8 @@ private:
 
 public:
     explicit DiskManager(size_t num_pages): bytes_(num_pages * PAGE_SIZE) {}
+
+    int AllocatePage();
     
     std::size_t ReadPage(int page_id, Page& page) const;
 

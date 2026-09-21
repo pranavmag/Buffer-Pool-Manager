@@ -30,6 +30,8 @@ public:
         }
     }
 
+    Page* NewPage(int& page_id);
+
     Page* FetchPage(int page_id);
 
     bool UnpinPage(int page_id, bool is_dirty);

@@ -54,6 +54,12 @@ bool BufferPoolManager::AddPage(int page_id) {
     return false;
 }
 
+Page* BufferPoolManager::NewPage(int& page_id) {
+    page_id = disk_manager_.AllocatePage();
+    
+    return FetchPage(page_id);
+}
+
 Page* BufferPoolManager::FetchPage(int page_id) {
     std::lock_guard<std::mutex> guard(bpm_mutex_);
 
