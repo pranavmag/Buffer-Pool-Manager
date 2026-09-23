@@ -20,7 +20,7 @@ private:
 public:
     explicit DiskManager(const fs::path& file_path);
 
-    int AllocatePage();
+    [[nodiscard]] int AllocatePage();
     
     std::size_t ReadPage(int page_id, Page& page);
 

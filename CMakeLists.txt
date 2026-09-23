@@ -55,6 +55,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 add_executable(db_tests
+    tests/disk_manager_tests.cpp
     tests/heap_page_tests.cpp
     tests/buffer_pool_tests.cpp
     tests/buffer_pool_concurrency_tests.cpp
