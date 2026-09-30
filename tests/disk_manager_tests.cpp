@@ -156,3 +156,141 @@ TEST_F(DiskManagerTest, WriteAndReadPage) {
 
     EXPECT_EQ(page0.GetData(), page1.GetData());
 }
+
+TEST_F(DiskManagerTest, PagesRemainIndependent) {
+    fs::path db_path = CreateDatabaseFile();
+
+    DiskManager disk_manager(db_path);
+
+    EXPECT_TRUE(fs::exists(db_path));
+    EXPECT_EQ(fs::file_size(db_path), 0);
+
+    int page0_id = disk_manager.AllocatePage();
+    int page1_id = disk_manager.AllocatePage();
+
+    Page page0(page0_id);
+    page0.GetData().fill(std::byte{'1'});
+
+    Page page1(page1_id);
+    page1.GetData().fill(std::byte{'2'});
+
+    std::size_t bytes0_written = disk_manager.WritePage(page0_id, page0);
+    std::size_t bytes1_written = disk_manager.WritePage(page1_id, page1);
+
+    ASSERT_EQ(bytes0_written, PAGE_SIZE);
+    ASSERT_EQ(bytes1_written, PAGE_SIZE);
+
+    std::size_t bytes0_read = disk_manager.ReadPage(page0_id, page0);
+    std::size_t bytes1_read = disk_manager.ReadPage(page1_id, page1);
+
+    ASSERT_EQ(bytes0_read, PAGE_SIZE);
+    ASSERT_EQ(bytes1_read, PAGE_SIZE);
+
+    EXPECT_FALSE(page0.GetData() == page1.GetData());
+
+    for (const auto& byte : page0.GetData()) {
+        EXPECT_EQ(byte, std::byte{'1'});
+    }
+
+    for (const auto &byte : page1.GetData()) {
+        EXPECT_EQ(byte, std::byte{'2'});
+    }
+}
+
+TEST_F(DiskManagerTest, DataPersistsAfterReopen) {
+    fs::path db_path = CreateDatabaseFile();
+
+    {
+        DiskManager disk_manager(db_path);
+
+        EXPECT_TRUE(fs::exists(db_path));
+        EXPECT_EQ(fs::file_size(db_path), 0);
+
+        int page_id = disk_manager.AllocatePage();
+
+        Page page0(page_id);
+        page0.GetData().fill(std::byte{'1'});
+
+        std::size_t bytes_written = disk_manager.WritePage(0, page0);
+
+        ASSERT_EQ(bytes_written, PAGE_SIZE);
+    }
+
+    DiskManager disk_manager(db_path);
+
+    int page_id = disk_manager.AllocatePage();
+
+    Page page0(0);
+
+    std::size_t bytes_read = disk_manager.ReadPage(0, page0);
+
+    ASSERT_EQ(bytes_read, PAGE_SIZE);
+
+    for (const auto& byte : page0.GetData()) {
+        EXPECT_EQ(byte, std::byte{'1'});
+    }
+}
+
+TEST_F(DiskManagerTest, ReadInvalidPageThrows) {
+    fs::path db_path = CreateDatabaseFile();
+
+    DiskManager disk_manager(db_path);
+
+    EXPECT_TRUE(fs::exists(db_path));
+    EXPECT_EQ(fs::file_size(db_path), 0);
+
+    Page page;
+
+    EXPECT_THROW(disk_manager.ReadPage(0, page), std::out_of_range);
+
+    EXPECT_THROW(disk_manager.ReadPage(-1, page), std::out_of_range);
+}
+
+TEST_F(DiskManagerTest, WriteInvalidPageThrows) {
+    fs::path db_path = CreateDatabaseFile();
+
+    DiskManager disk_manager(db_path);
+
+    EXPECT_TRUE(fs::exists(db_path));
+    EXPECT_EQ(fs::file_size(db_path), 0);
+
+    Page page;
+
+    EXPECT_THROW(
+        disk_manager.WritePage(0, page),
+        std::out_of_range
+    );
+
+    EXPECT_THROW(
+        disk_manager.WritePage(-1, page),
+        std::out_of_range
+    );
+}
+
+TEST_F(DiskManagerTest, RejectsMisalignedDatabaseFile) {
+    fs::path db_path = CreateDatabaseFile();
+
+    {
+        std::ofstream file(
+            db_path,
+            std::ios::binary | std::ios::out
+        );
+
+        ASSERT_TRUE(file.is_open());
+
+        std::array<char, 10> bad_data{};
+        file.write(
+            bad_data.data(),
+            static_cast<std::streamsize>(bad_data.size())
+        );
+    }
+
+    ASSERT_EQ(fs::file_size(db_path), 10);
+
+    EXPECT_THROW(
+        DiskManager disk_manager(db_path),
+        std::runtime_error
+    );
+}
+
+
