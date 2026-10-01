@@ -7,12 +7,7 @@
 #include <optional>
 #include <vector>
 
-using Rec = std::vector<std::byte>;
-
-struct PageDirectoryEntry {
-    int page_id;
-    std::uint16_t free_space;
-};
+using OwnedRecord = std::vector<std::byte>;
 
 struct RID {
     int page_id;
@@ -29,7 +24,7 @@ public:
 
     std::optional<RID> InsertRecord(const Record& record);
 
-    std::optional<Rec> GetRecord(const RID& rid);
+    std::optional<OwnedRecord> GetRecord(const RID& rid);
 
     bool DeleteRecord(const RID& rid);
 
