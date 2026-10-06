@@ -71,13 +71,83 @@ std::optional<RID> HeapFile::InsertRecord(const Record &record) {
 }
 
 std::optional<OwnedRecord> HeapFile::GetRecord(const RID &rid) {
-    
+    int page_id = rid.page_id;
+    std::uint16_t slot_id = rid.slot_id;
+
+    Page* page = bpm_.FetchPage(page_id);
+
+    if (page == nullptr) {
+        return std::nullopt;
+    }
+
+    std::optional<OwnedRecord> result;
+
+    {
+        auto guard = page->ReadLatch();
+
+        HeapPage heap_page(*page);
+
+        auto record = heap_page.GetRecord(slot_id);
+
+        if (record.has_value()) {
+            result = OwnedRecord(
+                record->begin(),
+                record->end()
+            );
+        }
+    }
+
+    bpm_.UnpinPage(page_id, false);
+
+    return result;
 }
 
 bool HeapFile::DeleteRecord(const RID &rid) {
+    int page_id = rid.page_id;
+    std::uint16_t slot_id = rid.slot_id;
 
+    Page* page = bpm_.FetchPage(page_id);
+
+    if (page == nullptr) {
+        return false;
+    }
+
+    bool is_deleted = false;
+
+    {
+        auto guard = page->WriteLatch();
+
+        HeapPage heap_page(*page);
+
+        is_deleted = heap_page.DeleteRecord(slot_id);
+    }
+
+    bpm_.UnpinPage(page_id, is_deleted);
+
+    return is_deleted;
 }
 
 bool HeapFile::UpdateRecord(const RID &rid, const Record &rec) {
+    int page_id = rid.page_id;
+    std::uint16_t slot_id = rid.slot_id;
 
+    Page* page = bpm_.FetchPage(page_id);
+
+    if (page == nullptr) {
+        return false;
+    }
+
+    bool is_updated = false;
+
+    {
+        auto guard = page->WriteLatch();
+
+        HeapPage heap_page(*page);
+
+        is_updated = heap_page.UpdateRecord(slot_id, rec);
+    }
+
+    bpm_.UnpinPage(page_id, is_updated);
+
+    return is_updated;
 }
