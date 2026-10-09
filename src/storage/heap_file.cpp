@@ -106,9 +106,12 @@ bool HeapFile::DeleteRecord(const RID &rid) {
     int page_id = rid.page_id;
     std::uint16_t slot_id = rid.slot_id;
 
-    Page* page = bpm_.FetchPage(page_id);
+    Page* page = nullptr;
 
-    if (page == nullptr) {
+    try {
+        page = bpm_.FetchPage(page_id);
+    }
+    catch (const std::out_of_range&) {
         return false;
     }
 

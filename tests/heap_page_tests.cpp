@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <gtest/gtest.h>
 
 #include "storage/heap_page.h"
@@ -6,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 
 /*
 initialization gives slot_count == 0 and expected free space ✓

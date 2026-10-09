@@ -17,6 +17,7 @@ set(DB_SOURCES
     src/storage/disk_manager.cpp
     src/buffer/page_table.cpp
     src/storage/heap_page.cpp
+    src/storage/heap_file.cpp
 )
 
 add_library(db_core ${DB_SOURCES})
@@ -57,6 +58,7 @@ enable_testing()
 add_executable(db_tests
     tests/disk_manager_tests.cpp
     tests/heap_page_tests.cpp
+    tests/heap_file_tests.cpp
     tests/buffer_pool_tests.cpp
     tests/buffer_pool_concurrency_tests.cpp
 )
