@@ -383,3 +383,330 @@ TEST_F(HeapFileTest, UpdateRecordSameSize) {
         )
     );
 }
+
+TEST_F(HeapFileTest, UpdateRecordSmaller) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 100> original{};
+    original.fill(std::byte{'A'});
+
+    std::array<std::byte, 20> updated{};
+    updated.fill(std::byte{'B'});
+
+    auto rid = heap_file.InsertRecord(original);
+
+    ASSERT_TRUE(rid.has_value());
+
+    EXPECT_TRUE(
+        heap_file.UpdateRecord(
+            *rid,
+            updated
+        )
+    );
+
+    auto stored = heap_file.GetRecord(*rid);
+
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->size(), updated.size());
+
+    EXPECT_TRUE(
+        std::equal(
+            stored->begin(),
+            stored->end(),
+            updated.begin()
+        )
+    );
+}
+
+TEST_F(HeapFileTest, UpdateRecordLargerWhenSpaceExists) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 100> original{};
+    original.fill(std::byte{'A'});
+
+    std::array<std::byte, 500> updated{};
+    updated.fill(std::byte{'B'});
+
+    auto rid = heap_file.InsertRecord(original);
+
+    ASSERT_TRUE(rid.has_value());
+
+    RID original_rid = *rid;
+
+    EXPECT_TRUE(
+        heap_file.UpdateRecord(
+            *rid,
+            updated
+        )
+    );
+
+    EXPECT_EQ(rid->page_id, original_rid.page_id);
+    EXPECT_EQ(rid->slot_id, original_rid.slot_id);
+
+    auto stored = heap_file.GetRecord(*rid);
+
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->size(), updated.size());
+
+    EXPECT_TRUE(
+        std::equal(
+            stored->begin(),
+            stored->end(),
+            updated.begin()
+        )
+    );
+}
+
+TEST_F(HeapFileTest, UpdateRecordFailsWhenPageLacksSpace) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 500> original{};
+    original.fill(std::byte{'A'});
+
+    std::array<std::byte, 3000> filler{};
+    filler.fill(std::byte{'B'});
+
+    auto rid = heap_file.InsertRecord(original);
+    auto filler_rid = heap_file.InsertRecord(filler);
+
+    ASSERT_TRUE(rid.has_value());
+    ASSERT_TRUE(filler_rid.has_value());
+
+    // Make sure both records are actually on the same page.
+    ASSERT_EQ(rid->page_id, filler_rid->page_id);
+
+    std::array<std::byte, 2000> too_large{};
+    too_large.fill(std::byte{'C'});
+
+    EXPECT_FALSE(
+        heap_file.UpdateRecord(
+            *rid,
+            too_large
+        )
+    );
+
+    // Original record should still be intact.
+    auto stored = heap_file.GetRecord(*rid);
+
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->size(), original.size());
+
+    EXPECT_TRUE(
+        std::equal(
+            stored->begin(),
+            stored->end(),
+            original.begin()
+        )
+    );
+}
+
+TEST_F(HeapFileTest, UpdateInvalidRID) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 4> data{
+        std::byte{'A'},
+        std::byte{'B'},
+        std::byte{'C'},
+        std::byte{'D'}
+    };
+
+    std::array<std::byte, 4> updated{
+        std::byte{'W'},
+        std::byte{'X'},
+        std::byte{'Y'},
+        std::byte{'Z'}
+    };
+
+    auto rid = heap_file.InsertRecord(data);
+    ASSERT_TRUE(rid.has_value());
+
+    RID invalid_page{
+        rid->page_id + 100,
+        0
+    };
+
+    EXPECT_FALSE(
+        heap_file.UpdateRecord(
+            invalid_page,
+            updated
+        )
+    );
+
+    RID invalid_slot{
+        rid->page_id,
+        static_cast<std::uint16_t>(rid->slot_id + 100)
+    };
+
+    EXPECT_FALSE(
+        heap_file.UpdateRecord(
+            invalid_slot,
+            updated
+        )
+    );
+
+    ASSERT_TRUE(
+        heap_file.DeleteRecord(*rid)
+    );
+
+    EXPECT_FALSE(
+        heap_file.UpdateRecord(
+            *rid,
+            updated
+        )
+    );
+}
+
+TEST_F(HeapFileTest, OversizedRecordFails) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, PAGE_SIZE + 1> oversized{};
+    oversized.fill(std::byte{'A'});
+
+    auto rid = heap_file.InsertRecord(oversized);
+
+    EXPECT_FALSE(rid.has_value());
+}
+
+TEST_F(HeapFileTest, ReturnedRecordOwnsItsData) {
+    bpm.reset();
+
+    bpm = std::make_unique<BufferPoolManager>(
+        1,
+        db_path
+    );
+
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 2500> data1{};
+    std::array<std::byte, 2500> data2{};
+
+    data1.fill(std::byte{'A'});
+    data2.fill(std::byte{'B'});
+
+    auto rid1 = heap_file.InsertRecord(data1);
+    auto rid2 = heap_file.InsertRecord(data2);
+
+    ASSERT_TRUE(rid1.has_value());
+    ASSERT_TRUE(rid2.has_value());
+    ASSERT_NE(rid1->page_id, rid2->page_id);
+
+    auto owned = heap_file.GetRecord(*rid1);
+
+    ASSERT_TRUE(owned.has_value());
+
+    // Force the single frame to contain another page.
+    auto other = heap_file.GetRecord(*rid2);
+    ASSERT_TRUE(other.has_value());
+
+    // owned should still be valid because HeapFile copied it.
+    ASSERT_EQ(owned->size(), data1.size());
+
+    EXPECT_TRUE(
+        std::equal(
+            owned->begin(),
+            owned->end(),
+            data1.begin()
+        )
+    );
+}
+
+TEST_F(HeapFileTest, DeletedSlotCanBeReused) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 1> a{std::byte{'A'}};
+    std::array<std::byte, 1> b{std::byte{'B'}};
+    std::array<std::byte, 1> c{std::byte{'C'}};
+    std::array<std::byte, 1> d{std::byte{'D'}};
+
+    auto rid_a = heap_file.InsertRecord(a);
+    auto rid_b = heap_file.InsertRecord(b);
+    auto rid_c = heap_file.InsertRecord(c);
+
+    ASSERT_TRUE(rid_a.has_value());
+    ASSERT_TRUE(rid_b.has_value());
+    ASSERT_TRUE(rid_c.has_value());
+
+    ASSERT_TRUE(
+        heap_file.DeleteRecord(*rid_b)
+    );
+
+    auto rid_d = heap_file.InsertRecord(d);
+
+    ASSERT_TRUE(rid_d.has_value());
+
+    EXPECT_EQ(rid_d->page_id, rid_b->page_id);
+    EXPECT_EQ(rid_d->slot_id, rid_b->slot_id);
+
+    auto stored = heap_file.GetRecord(*rid_d);
+
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->size(), d.size());
+
+    EXPECT_EQ((*stored)[0], std::byte{'D'});
+}
+
+TEST_F(HeapFileTest, RecordsRemainIndependentAcrossPages) {
+    HeapFile heap_file(*bpm);
+
+    std::array<std::byte, 2500> page0_data{};
+    std::array<std::byte, 2500> page1_data{};
+    std::array<std::byte, 2500> updated_page0{};
+
+    page0_data.fill(std::byte{'A'});
+    page1_data.fill(std::byte{'B'});
+    updated_page0.fill(std::byte{'C'});
+
+    auto rid0 = heap_file.InsertRecord(page0_data);
+    auto rid1 = heap_file.InsertRecord(page1_data);
+
+    ASSERT_TRUE(rid0.has_value());
+    ASSERT_TRUE(rid1.has_value());
+
+    ASSERT_NE(rid0->page_id, rid1->page_id);
+
+    ASSERT_TRUE(
+        heap_file.UpdateRecord(
+            *rid0,
+            updated_page0
+        )
+    );
+
+    auto stored0 = heap_file.GetRecord(*rid0);
+    auto stored1 = heap_file.GetRecord(*rid1);
+
+    ASSERT_TRUE(stored0.has_value());
+    ASSERT_TRUE(stored1.has_value());
+
+    EXPECT_TRUE(
+        std::equal(
+            stored0->begin(),
+            stored0->end(),
+            updated_page0.begin()
+        )
+    );
+
+    EXPECT_TRUE(
+        std::equal(
+            stored1->begin(),
+            stored1->end(),
+            page1_data.begin()
+        )
+    );
+
+    ASSERT_TRUE(
+        heap_file.DeleteRecord(*rid0)
+    );
+
+    auto page1_after_delete =
+        heap_file.GetRecord(*rid1);
+
+    ASSERT_TRUE(page1_after_delete.has_value());
+
+    EXPECT_TRUE(
+        std::equal(
+            page1_after_delete->begin(),
+            page1_after_delete->end(),
+            page1_data.begin()
+        )
+    );
+}

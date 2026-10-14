@@ -6,10 +6,12 @@ std::optional<RID> HeapFile::InsertRecord(const Record &record) {
     }
 
     for (int page_id : page_ids_) {
-        Page* page = bpm_.FetchPage(page_id);
+        Page *page = nullptr;
 
-        if (page == nullptr) {
-            continue;
+        try {
+            page = bpm_.FetchPage(page_id);
+        } catch (const std::out_of_range &) {
+            return std::nullopt;
         }
 
         std::optional<std::uint16_t> slot_id;
@@ -74,9 +76,12 @@ std::optional<OwnedRecord> HeapFile::GetRecord(const RID &rid) {
     int page_id = rid.page_id;
     std::uint16_t slot_id = rid.slot_id;
 
-    Page* page = bpm_.FetchPage(page_id);
+    Page* page = nullptr;
 
-    if (page == nullptr) {
+    try {
+        page = bpm_.FetchPage(page_id);
+    }
+    catch (const std::out_of_range&) {
         return std::nullopt;
     }
 
@@ -134,9 +139,12 @@ bool HeapFile::UpdateRecord(const RID &rid, const Record &rec) {
     int page_id = rid.page_id;
     std::uint16_t slot_id = rid.slot_id;
 
-    Page* page = bpm_.FetchPage(page_id);
+    Page* page = nullptr;
 
-    if (page == nullptr) {
+    try {
+        page = bpm_.FetchPage(page_id);
+    }
+    catch (const std::out_of_range&) {
         return false;
     }
 
