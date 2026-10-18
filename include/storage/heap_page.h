@@ -23,6 +23,8 @@ struct SlotEntry {
     }
 };
 
+constexpr std::size_t HEAP_PAGE_SIZE = PAGE_SIZE - sizeof(HeapPageHeader) - sizeof(SlotEntry);
+
 class HeapPage {
 private:
     Page& page_;

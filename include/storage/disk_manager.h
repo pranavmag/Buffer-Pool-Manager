@@ -15,10 +15,10 @@ private:
     std::fstream file_;
     std::mutex disk_mutex_;
 
-    bool IsValidPageId(int page_id) const;
-
 public:
     explicit DiskManager(const fs::path& file_path);
+
+    [[nodiscard]] bool IsValidPageId(int page_id) const;
 
     [[nodiscard]] int AllocatePage();
     

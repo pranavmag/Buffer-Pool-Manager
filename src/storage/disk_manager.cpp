@@ -10,13 +10,10 @@ bool DiskManager::IsValidPageId(int page_id) const {
     return false;
   }
 
-  auto page_count = fs::file_size(file_path_) / PAGE_SIZE;
+  auto file_size = fs::file_size(file_path_);
+  auto page_count = file_size / PAGE_SIZE;
 
-  if (static_cast<std::size_t>(page_id) >= page_count) {
-    return false;
-  }
-
-  return true;
+  return static_cast<std::size_t>(page_id) < page_count;
 }
 
 DiskManager::DiskManager(const fs::path& file_path): file_path_(file_path) {

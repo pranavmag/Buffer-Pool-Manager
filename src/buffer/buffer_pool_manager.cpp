@@ -9,55 +9,96 @@ bool BufferPoolManager::AddPage(int page_id) {
         return true;
     }
 
+    if (!disk_manager_.IsValidPageId(page_id)) {
+        return false;
+    }
+
+    auto frame_id = AcquireFrame();
+
+    if (!frame_id) {
+        return false;
+    }
+
+    Frame& frame = *frame_array_[*frame_id];
+
+    frame.AssignPage(page_id);
+
+    Page& page = frame.GetPage();
+
+    {
+        auto guard = page.WriteLatch();
+
+        disk_manager_.ReadPage(page_id, page);
+    }
+
+    page_table_.AddMapping(page_id, *frame_id);
+
+    return true;
+}
+
+std::optional<int> BufferPoolManager::AcquireFrame() {
     for (auto& frame_ptr : frame_array_) {
         Frame& frame = *frame_ptr;
 
         if (frame.IsEmpty()) {
-            frame.AssignPage(page_id);
-
-            Page& page = frame.GetPage();
-
-            auto page_guard = page.WriteLatch();
-
-            disk_manager_.ReadPage(page_id, page);
-
-            page_table_.AddMapping(page_id, frame.GetFrameId());
-
-            return true;
+            return frame.GetFrameId();
         }
     }
 
+    // No Empty Frame Found, Needs Eviction
     std::optional<int> victim = clock_replacer_.FindVictim(frame_array_);
+
     if (victim) {
         Frame& frame = *frame_array_[*victim];
-        Page& page = frame.GetPage();
-
-        auto page_guard = page.WriteLatch();
 
         if (frame.IsDirty()) {
+            Page& page = frame.GetPage();
+
+            auto guard = page.WriteLatch();
+
             disk_manager_.WritePage(page.GetPageId(), page);
-            
+
             frame.ClearDirty();
         }
 
-        page_table_.RemoveMapping(page.GetPageId());
+        page_table_.RemoveMapping(frame.GetPage().GetPageId());
 
-        frame.AssignPage(page_id);
-
-        disk_manager_.ReadPage(page_id, page);
-
-        page_table_.AddMapping(page_id, frame.GetFrameId());
-
-        return true;
+        return frame.GetFrameId();
     }
 
-    return false;
+    return std::nullopt;
 }
 
 Page* BufferPoolManager::NewPage(int& page_id) {
+    std::lock_guard<std::mutex> guard(bpm_mutex_);
+
+    auto frame_id = AcquireFrame();
+
+    if (!frame_id) {
+        return nullptr;
+    }
+
     page_id = disk_manager_.AllocatePage();
-    
-    return FetchPage(page_id);
+
+    Frame& frame = *frame_array_[*frame_id];
+
+    frame.AssignPage(page_id);
+
+    // clearing potential stale memory from the victim frame
+    {
+        Page& page = frame.GetPage();
+        auto page_guard = page.WriteLatch();
+
+        page.GetData().fill(std::byte{0});
+    }   
+
+    page_table_.AddMapping(page_id, *frame_id);
+
+    frame.IncrementPinCount();
+
+    clock_replacer_.SetReferenceBit(*frame_id);
+
+    return &frame.GetPage();
 }
 
 Page* BufferPoolManager::FetchPage(int page_id) {

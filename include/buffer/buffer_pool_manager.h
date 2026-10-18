@@ -20,6 +20,8 @@ private:
 
     bool AddPage(int page_id);
 
+    std::optional<int> AcquireFrame();
+
 public:
   BufferPoolManager(std::size_t num_frames, const fs::path& file_path)
       : clock_replacer_(num_frames), disk_manager_(file_path) {

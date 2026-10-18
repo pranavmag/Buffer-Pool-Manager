@@ -171,3 +171,103 @@ TEST_F(BufferPoolManagerTest, BasicFetchEvictionAndDirtyReload) {
     // Clean up remaining pin on page 1.
     EXPECT_TRUE(bpm.UnpinPage(1, false));
 }
+
+TEST_F(BufferPoolManagerTest, NewPageDoesNotAllocateWhenAllFramesPinned) {
+    fs::path db_path = "bpm_new_page_pinned_test.db";
+
+    if (fs::exists(db_path)) {
+        fs::remove(db_path);
+    }
+
+    {
+        BufferPoolManager bpm(1, db_path);
+
+        int page0_id = -1;
+
+        Page* page0 = bpm.NewPage(page0_id);
+
+        ASSERT_NE(page0, nullptr);
+        ASSERT_EQ(page0_id, 0);
+
+        // Keep page 0 pinned.
+
+        auto size_before =
+            fs::file_size(db_path);
+
+        int page1_id = -1;
+
+        Page* page1 = bpm.NewPage(page1_id);
+
+        EXPECT_EQ(page1, nullptr);
+
+        auto size_after =
+            fs::file_size(db_path);
+
+        EXPECT_EQ(size_after, size_before);
+
+        // Clean up the original pin.
+        EXPECT_TRUE(
+            bpm.UnpinPage(page0_id, false)
+        );
+    }
+
+    fs::remove(db_path);
+}
+
+TEST_F(BufferPoolManagerTest, FailedFetchDoesNotEvictValidPage) {
+    fs::path db_path = "bpm_failed_fetch_test.db";
+
+    if (fs::exists(db_path)) {
+        fs::remove(db_path);
+    }
+
+    {
+        BufferPoolManager bpm(1, db_path);
+
+        int page0_id = -1;
+
+        Page* page0 = bpm.NewPage(page0_id);
+
+        ASSERT_NE(page0, nullptr);
+        ASSERT_EQ(page0_id, 0);
+
+        {
+            auto guard = page0->WriteLatch();
+
+            page0->GetData()[0] =
+                std::byte{'A'};
+        }
+
+        EXPECT_TRUE(
+            bpm.UnpinPage(page0_id, true)
+        );
+
+        // Page 999 does not exist on disk.
+        Page* invalid =
+            bpm.FetchPage(999);
+
+        EXPECT_EQ(invalid, nullptr);
+
+        // The valid page should still be usable.
+        Page* page0_again =
+            bpm.FetchPage(page0_id);
+
+        ASSERT_NE(page0_again, nullptr);
+
+        {
+            auto guard =
+                page0_again->ReadLatch();
+
+            EXPECT_EQ(
+                page0_again->GetData()[0],
+                std::byte{'A'}
+            );
+        }
+
+        EXPECT_TRUE(
+            bpm.UnpinPage(page0_id, false)
+        );
+    }
+
+    fs::remove(db_path);
+}
