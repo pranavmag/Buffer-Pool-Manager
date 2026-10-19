@@ -18,6 +18,7 @@ set(DB_SOURCES
     src/buffer/page_table.cpp
     src/storage/heap_page.cpp
     src/storage/heap_file.cpp
+    src/storage/page_directory.cpp
 )
 
 add_library(db_core ${DB_SOURCES})

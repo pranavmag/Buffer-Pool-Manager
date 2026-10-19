@@ -17,10 +17,17 @@ struct RID {
 class HeapFile {
 private:
     BufferPoolManager& bpm_;
-    std::vector<int> page_ids_;
+    int first_directory_page_id_;
 
 public:
-    explicit HeapFile(BufferPoolManager& bpm): bpm_(bpm) {}
+    explicit HeapFile(BufferPoolManager& bpm);
+
+    HeapFile(
+        BufferPoolManager& bpm,
+        int first_directory_page_id
+    );
+
+    [[nodiscard]] int GetFirstDirectoryPageId() const;
 
     std::optional<RID> InsertRecord(const Record& record);
 

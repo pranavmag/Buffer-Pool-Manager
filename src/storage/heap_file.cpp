@@ -1,6 +1,41 @@
 #include "storage/heap_file.h"
+#include "storage/page_directory.h"
 
-std::optional<RID> HeapFile::InsertRecord(const Record &record) {
+HeapFile::HeapFile(BufferPoolManager& bpm)
+    : bpm_(bpm) {
+
+    Page* page =
+        bpm_.NewPage(first_directory_page_id_);
+
+    if (page == nullptr) {
+        throw std::runtime_error(
+            "Failed to create heap file directory"
+        );
+    }
+
+    {
+        auto guard = page->WriteLatch();
+
+        PageDirectory directory(*page);
+
+        directory.Initialize();
+    }
+
+    bpm_.UnpinPage(
+        first_directory_page_id_,
+        true
+    );
+}
+
+HeapFile::HeapFile(BufferPoolManager& bpm, int first_directory_page_id)
+    : bpm_(bpm),
+      first_directory_page_id_(first_directory_page_id) {}
+
+int HeapFile::GetFirstDirectoryPageId() const {
+    return first_directory_page_id_;
+}
+
+std::optional<RID> HeapFile::InsertRecord(const Record& record) {
     if (record.empty()) {
         return std::nullopt;
     }
@@ -9,69 +44,191 @@ std::optional<RID> HeapFile::InsertRecord(const Record &record) {
         return std::nullopt;
     }
 
-    for (int page_id : page_ids_) {
-        Page *page = bpm_.FetchPage(page_id);
+    int directory_page_id = first_directory_page_id_;
 
-        if (page == nullptr) {
+    while (directory_page_id != -1) {
+        Page* dir_page = bpm_.FetchPage(directory_page_id);
+
+        if (dir_page == nullptr) {
             return std::nullopt;
         }
 
-        std::optional<std::uint16_t> slot_id;
+        DirectoryPageHeader header{};
+        std::vector<PageDirectoryEntry> entries;
 
         {
-            auto guard = page->WriteLatch();
+            auto guard = dir_page->ReadLatch();
 
-            HeapPage heap_page(*page);
+            PageDirectory directory(*dir_page);
 
-            slot_id = heap_page.InsertRecord(record);
+            header = directory.ReadHeader();
+
+            entries.reserve(header.num_entries);
+
+            for (std::uint16_t i = 0; i < header.num_entries; ++i) {
+                entries.push_back(directory.ReadEntry(i));
+            }
         }
 
-        if (slot_id.has_value()) {
-            bpm_.UnpinPage(page_id, true);
+        bpm_.UnpinPage(directory_page_id, false);
+
+        // Try existing data pages described by this directory.
+        for (std::uint16_t i = 0; i < entries.size(); ++i) {
+
+            PageDirectoryEntry entry = entries[i];
+
+            // Fast rejection using cached free-space metadata.
+            if (entry.free_space < record.size()) {
+                continue;
+            }
+
+            Page* page = bpm_.FetchPage(entry.page_id);
+
+            if (page == nullptr) {
+                continue;
+            }
+
+            std::optional<std::uint16_t> slot_id;
+            std::uint16_t new_free_space = 0;
+
+            {
+                auto guard = page->WriteLatch();
+
+                HeapPage heap_page(*page);
+
+                slot_id = heap_page.InsertRecord(record);
+
+                if (slot_id.has_value()) {
+                    new_free_space = heap_page.GetFreeSpace();
+                }
+            }
+
+            if (!slot_id.has_value()) {
+                bpm_.UnpinPage(entry.page_id, false);
+
+                continue;
+            }
+
+            // Data page changed.
+            bpm_.UnpinPage(entry.page_id, true);
+
+            // Update cached free-space information.
+            dir_page = bpm_.FetchPage(directory_page_id);
+
+            if (dir_page == nullptr) {
+                return std::nullopt;
+            }
+
+            {
+                auto guard = dir_page->WriteLatch();
+
+                PageDirectory directory(*dir_page);
+
+                entry.free_space = new_free_space;
+
+                directory.WriteEntry(i, entry);
+            }
+
+            bpm_.UnpinPage(
+                directory_page_id,
+                true
+            );
 
             return RID{
-                page_id,
+                entry.page_id,
                 *slot_id
             };
         }
 
-        bpm_.UnpinPage(page_id, false);
+        // If another directory page exists,
+        // continue searching there.
+        if (header.next_dir_page != -1) {
+            directory_page_id = header.next_dir_page;
+
+            continue;
+        }
+
+        // No existing HeapPage had enough room.
+        // This is currently the last directory page.
+
+        if (header.num_entries >= DIRECTORY_ENTRY_CAPACITY) {
+            // V2 currently supports one directory page
+            // worth of entries.
+            //
+            // Later this is where we allocate and link
+            // another PageDirectory.
+            return std::nullopt;
+        }
+
+        int new_page_id = -1;
+
+        Page* new_page =
+            bpm_.NewPage(new_page_id);
+
+        if (new_page == nullptr) {
+            return std::nullopt;
+        }
+
+        std::optional<std::uint16_t> slot_id;
+        std::uint16_t remaining_free_space = 0;
+
+        {
+            auto guard = new_page->WriteLatch();
+
+            HeapPage heap_page(*new_page);
+
+            heap_page.Initialize();
+
+            slot_id =
+                heap_page.InsertRecord(record);
+
+            if (slot_id.has_value()) {
+                remaining_free_space = heap_page.GetFreeSpace();
+            }
+        }
+
+        if (!slot_id.has_value()) {
+            bpm_.UnpinPage(new_page_id, false);
+
+            return std::nullopt;
+        }
+
+        // New data page now contains the record.
+        bpm_.UnpinPage(new_page_id, true);
+
+        // Add ownership + free-space metadata
+        // to the directory.
+        dir_page = bpm_.FetchPage(directory_page_id);
+
+        if (dir_page == nullptr) {
+            return std::nullopt;
+        }
+
+        {
+            auto guard = dir_page->WriteLatch();
+
+            PageDirectory directory(*dir_page);
+
+            auto current_header = directory.ReadHeader();
+
+            PageDirectoryEntry new_entry{new_page_id, remaining_free_space};
+
+            directory.WriteEntry(current_header.num_entries, new_entry);
+
+            ++current_header.num_entries;
+
+            directory.WriteHeader(current_header);
+        }
+
+        bpm_.UnpinPage(directory_page_id, true);
+
+        return RID {
+            new_page_id,
+            *slot_id
+        };
     }
 
-    // No existing page had enough room
-    int new_page_id = -1;
-
-    Page* page = bpm_.NewPage(new_page_id);
-
-    if (page == nullptr) {
-        return std::nullopt;
-    }
-
-    std::optional<std::uint16_t> slot_id;
-
-    {
-        auto guard = page->WriteLatch();
-
-        HeapPage heap_page(*page);
-
-        heap_page.Initialize();
-
-        slot_id = heap_page.InsertRecord(record);
-    }
-
-    if (!slot_id.has_value()) {
-        bpm_.UnpinPage(new_page_id, false);
-        return std::nullopt;
-    }
-
-    page_ids_.push_back(new_page_id);
-
-    bpm_.UnpinPage(new_page_id, true);
-
-    return RID {
-        new_page_id,
-        *slot_id
-    };
+    return std::nullopt;
 }
 
 std::optional<OwnedRecord> HeapFile::GetRecord(const RID &rid) {

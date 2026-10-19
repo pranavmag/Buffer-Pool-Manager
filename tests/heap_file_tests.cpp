@@ -4,7 +4,6 @@
 #include "buffer/buffer_pool_manager.h"
 #include "storage/page.h"
 
-
 /*
 1. InsertAndGetSingleRecord
    - create HeapFile
@@ -707,6 +706,61 @@ TEST_F(HeapFileTest, RecordsRemainIndependentAcrossPages) {
             page1_after_delete->begin(),
             page1_after_delete->end(),
             page1_data.begin()
+        )
+    );
+}
+
+TEST_F(HeapFileTest, ReopenHeapFilePreservesRecords) {
+    RID saved_rid{};
+    int directory_page_id = -1;
+
+    std::array<std::byte, 4> data{
+        std::byte{'A'},
+        std::byte{'B'},
+        std::byte{'C'},
+        std::byte{'D'}
+    };
+
+    {
+        HeapFile heap_file(*bpm);
+
+        auto rid = heap_file.InsertRecord(data);
+
+        ASSERT_TRUE(rid.has_value());
+
+        saved_rid = *rid;
+
+        directory_page_id = heap_file.GetFirstDirectoryPageId();
+
+        ASSERT_NE(directory_page_id, -1);
+
+        ASSERT_TRUE(bpm->FlushAllPages());
+    }
+
+    // Destroy the original BPM so this really tests
+    // persistence through the file-backed DiskManager.
+    bpm.reset();
+
+    bpm = std::make_unique<BufferPoolManager>(
+        2,
+        db_path
+    );
+
+    HeapFile reopened(
+        *bpm,
+        directory_page_id
+    );
+
+    auto stored = reopened.GetRecord(saved_rid);
+
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->size(), data.size());
+
+    EXPECT_TRUE(
+        std::equal(
+            stored->begin(),
+            stored->end(),
+            data.begin()
         )
     );
 }
